@@ -6,7 +6,7 @@ use tokio::runtime::Runtime;
 use crate::subapps::node::server_listener;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-enum ServerListener {
+pub enum ServerListener {
     HealthCheckListener,
     ApiHealthCheckListener,
 }
@@ -21,10 +21,10 @@ impl ToString for ServerListener {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
-struct ServerConfig {
-    ip: String,                    //ip of the machine
-    listener: Vec<ServerListener>, //what request the server will listen to
-    loadbalancer_ip: Vec<String>,       // the 
+pub struct ServerConfig {
+    pub ip: String,                    //ip of the machine
+    pub listener: Vec<ServerListener>, //what request the server will listen to
+    pub loadbalancer_ip: Vec<String>,       // the 
 }
 
 pub fn configure_server() {
