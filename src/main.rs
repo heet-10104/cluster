@@ -1,25 +1,19 @@
 mod common;
-use common::background::{dynamic_metrics, Metrics, SystemInfo};
 use dialoguer::{theme::ColorfulTheme, Select};
 use std::io::{self, Write};
 use std::{thread, time::Duration};
-use sysinfo::System;
 
 mod config;
 mod subapps;
 use config::loadbalancer_config::configure_load_balancer;
-use config::loadbalancer_config::Protocol;
 use config::loadbalancer_config::Features;
+use config::loadbalancer_config::Protocol;
+use config::server_config::configure_server;
 
 enum NodeType {
     LoadBalancer,
     Server,
     MicroServer,
-}
-
-enum Config {
-    LoadBalancerConfig,
-    ServerConfig,
 }
 
 impl ToString for NodeType {
@@ -30,25 +24,6 @@ impl ToString for NodeType {
             NodeType::MicroServer => "Micro Server",
         };
         string.into()
-    }
-}
-
-struct ServerConfig {
-    ip: String,
-    nodes_coneected: Vec<String>,
-}
-
-
-fn background_task() {
-    let mut sys = System::new_all();
-    sys.refresh_all();
-
-    let mut system_info = SystemInfo::new(&mut sys);
-    println!("System Info: {:#?}", system_info);
-    let mut metrics = Metrics::new(&mut sys);
-    loop {
-        dynamic_metrics(&mut sys, &mut metrics, &mut system_info);
-        thread::sleep(Duration::from_secs(2));
     }
 }
 
@@ -82,7 +57,7 @@ fn main() {
             configure_load_balancer(&protocols, &features);
         }
         NodeType::Server => {
-
+            configure_server();
         }
         NodeType::MicroServer => {}
     }
