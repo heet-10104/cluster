@@ -1,16 +1,15 @@
 mod common;
-use dialoguer::Confirm;
-use dialoguer::{theme::ColorfulTheme, Select};
+mod config;
+mod subapps;
+use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use std::io::{self, Write};
 use tokio::runtime::Runtime;
 
-mod config;
-mod subapps;
 use crate::subapps::loadbalancer::balance_load;
 use crate::subapps::node::server_listener;
-use config::loadbalancer_config::Features;
-use config::loadbalancer_config::Protocol;
-use config::loadbalancer_config::{configure_load_balancer, LoadBalancerConfig};
+use config::loadbalancer_config::{
+    configure_load_balancer, Features, LoadBalancerConfig, Protocol,
+};
 use config::server_config::{configure_server, ServerConfig};
 enum NodeType {
     LoadBalancer,
@@ -30,7 +29,6 @@ impl ToString for NodeType {
 }
 
 fn main() {
-    //thread::spawn(background_task);
     io::stdout().flush().unwrap();
 
     let node_types = [
@@ -45,7 +43,6 @@ fn main() {
         .items(&node_types)
         .interact()
         .unwrap();
-
     let node_type = &node_types[node_type];
 
     match node_type {
@@ -70,6 +67,13 @@ fn main() {
                     rt.block_on(balance_load());
                 }
             }
+            let protocols = [
+                Protocol::RobinRound,
+                Protocol::LeastConnections,
+                Protocol::LeastResponse,
+            ];
+            let features = [Features::HealthCheck, Features::ApiHealthCheck];
+            configure_load_balancer(&protocols, &features);
         }
         NodeType::Server => {
             let cfg_path = confy::get_configuration_file_path("load-balancer-config", None);
@@ -88,23 +92,8 @@ fn main() {
                     rt.block_on(server_listener());
                 }
             }
-        }
-        NodeType::MicroServer => {}
-    };
-
-    match node_type {
-        NodeType::LoadBalancer => {
-            let protocols = [
-                Protocol::RobinRound,
-                Protocol::LeastConnections,
-                Protocol::LeastResponse,
-            ];
-            let features = [Features::HealthCheck, Features::ApiHealthCheck];
-            configure_load_balancer(&protocols, &features);
-        }
-        NodeType::Server => {
             configure_server();
         }
         NodeType::MicroServer => {}
-    }
+    };
 }

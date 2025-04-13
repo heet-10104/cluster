@@ -33,8 +33,6 @@ pub fn configure_server() {
         .interact_text()
         .unwrap();
 
-    let ports: Vec<u16> = vec![];
-
     let listener = [
         ServerListener::HealthCheckListener,
         ServerListener::ApiHealthCheckListener,

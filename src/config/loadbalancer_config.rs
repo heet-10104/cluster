@@ -1,10 +1,9 @@
 use confy;
-use dialoguer::MultiSelect;
-use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, Input, MultiSelect, Select};
 use indicatif::{ProgressBar, ProgressStyle};
-use tokio::runtime::Runtime;
 use std::process::Command;
 use std::{thread, time::Duration};
+use tokio::runtime::Runtime;
 
 use crate::subapps::loadbalancer::balance_load;
 

@@ -1,6 +1,5 @@
 use crate::config::loadbalancer_config::{Features, LoadBalancerConfig, Protocol};
 use crate::subapps::node::Metrics;
-use axum::http::response;
 use axum::{
     body::{to_bytes, Body},
     extract::{Path, State},
@@ -9,11 +8,11 @@ use axum::{
     Router,
 };
 use reqwest::Client;
-use std::thread::sleep;
-use std::time::Duration;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     sync::Arc,
+    thread::sleep,
+    time::Duration,
 };
 use tokio::net::TcpListener;
 
@@ -72,9 +71,9 @@ impl LoadBalancerState {
     }
 }
 
-async fn health_check(servers: Vec<String>) {
+async fn health_check(servers: Arc<Vec<String>>) {
     loop {
-        for ip in &servers {
+        for ip in servers.iter() {
             let url = "http://".to_owned() + &ip + ":3000" + "/metrics";
             let client = Client::new();
 
@@ -82,7 +81,7 @@ async fn health_check(servers: Vec<String>) {
             let metrics: Metrics = response.json().await.expect("failed to parse JSON");
             println!("{:?}", metrics);
         }
-
+        // todo analysis
         sleep(Duration::from_secs(60));
     }
 }
@@ -92,16 +91,10 @@ pub async fn balance_load() {
     let load_balancer_state = LoadBalancerState::new();
     let address = load_balancer_state.clone().ip + ":3000";
     let servers = load_balancer_state.clone().servers;
-    match Arc::try_unwrap(servers) {
-        Ok(servers) => {
-            tokio::spawn(async move {
-                health_check(servers).await;
-            });
-        }
-        Err(_) => {
-            println!("Arc has other owners, can't unwrap.");
-        }
-    }
+
+    tokio::spawn(async move {
+        health_check(servers).await;
+    });
 
     let app = Router::new()
         .route("/{*wildcard}", get(handle_request).post(handle_request))
@@ -112,7 +105,7 @@ pub async fn balance_load() {
 }
 
 async fn handle_request(
-    Path(path): Path<String>,
+    Path(_path): Path<String>,
     lb: State<LoadBalancerState>,
     req: Request<Body>,
 ) -> Result<Response<String>, StatusCode> {
