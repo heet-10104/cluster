@@ -5,20 +5,19 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
     routing::get,
-    serve::{Listener, Serve},
     Json, Router,
 };
 use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo};
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sysinfo::{CpuRefreshKind, RefreshKind, System};
 use tokio::time::Instant;
 
-#[derive(Serialize)]
-struct Metrics {
-    cpu: f32,
-    ram: f64,
-    netspeed: Vec<f64>,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Metrics {
+    pub cpu: f32,
+    pub ram: f64,
+    pub netspeed: Vec<f64>,
 }
 //listens to lb and sends the response
 pub async fn server_listener() {
@@ -83,7 +82,7 @@ async fn netspeed_download() -> f64 {
     let bytes = response
         .bytes()
         .await
-        .expect("shoild get the bytes recieved");
+        .expect("should get the bytes recieved");
     let elapsed = start.elapsed().as_secs_f64();
 
     let size_in_mb = bytes.len() as f64 / (1024.0 * 1024.0);

@@ -1,4 +1,6 @@
 use crate::config::loadbalancer_config::{Features, LoadBalancerConfig, Protocol};
+use crate::subapps::node::Metrics;
+use axum::http::response;
 use axum::{
     body::{to_bytes, Body},
     extract::{Path, State},
@@ -7,6 +9,8 @@ use axum::{
     Router,
 };
 use reqwest::Client;
+use std::thread::sleep;
+use std::time::Duration;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     sync::Arc,
@@ -15,6 +19,7 @@ use tokio::net::TcpListener;
 
 #[derive(Clone)]
 struct LoadBalancerState {
+    ip: String,
     servers: Arc<Vec<String>>,
     protocol: Arc<Protocol>,
     features: Arc<Vec<Features>>,
@@ -26,12 +31,14 @@ impl LoadBalancerState {
     fn new() -> Self {
         let cfg: LoadBalancerConfig =
             confy::load("load-balancer-config", None).expect("Failed to load config");
+        let ip = cfg.ip;
         let protocol = Arc::new(cfg.protocol);
         let features = Arc::new(cfg.features.clone());
         let index = Arc::new(AtomicUsize::new(0));
         let servers = Arc::new(cfg.nodes);
 
         LoadBalancerState {
+            ip,
             servers,
             protocol,
             features,
@@ -65,16 +72,42 @@ impl LoadBalancerState {
     }
 }
 
+async fn health_check(servers: Vec<String>) {
+    loop {
+        for ip in &servers {
+            let url = "http://".to_owned() + &ip + ":3000" + "/metrics";
+            let client = Client::new();
+
+            let response = client.get(url).send().await.expect("metrtics from server");
+            let metrics: Metrics = response.json().await.expect("failed to parse JSON");
+            println!("{:?}", metrics);
+        }
+
+        sleep(Duration::from_secs(60));
+    }
+}
+
 pub async fn balance_load() {
     //todo make switch to protocol
     let load_balancer_state = LoadBalancerState::new();
+    let address = load_balancer_state.clone().ip + ":3000";
+    let servers = load_balancer_state.clone().servers;
+    match Arc::try_unwrap(servers) {
+        Ok(servers) => {
+            tokio::spawn(async move {
+                health_check(servers).await;
+            });
+        }
+        Err(_) => {
+            println!("Arc has other owners, can't unwrap.");
+        }
+    }
 
     let app = Router::new()
-        .route("/*path", get(handle_request).post(handle_request))
+        .route("/{*wildcard}", get(handle_request).post(handle_request))
         .with_state(load_balancer_state);
-
-    let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
-
+    let listener = TcpListener::bind(address).await.unwrap();
+    println!("loadbalancer is listening...");
     axum::serve(listener, app).await.unwrap();
 }
 

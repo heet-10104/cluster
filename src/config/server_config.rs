@@ -24,7 +24,7 @@ impl ToString for ServerListener {
 pub struct ServerConfig {
     pub ip: String,                    //ip of the machine
     pub listener: Vec<ServerListener>, //what request the server will listen to
-    pub loadbalancer_ip: Vec<String>,       // the 
+    pub loadbalancer_ip: Vec<String>,  // the
 }
 
 pub fn configure_server() {
@@ -55,45 +55,45 @@ pub fn configure_server() {
         .map(|&index| listener[index].clone())
         .collect();
 
-        let mut next_ip = true;
-        let mut loadbalancer_ip: Vec<String> = vec![];
-        while next_ip {
-            let node_ip: String = Input::with_theme(&ColorfulTheme::default())
-                .with_prompt("Connected Server IPv4")
-                .validate_with(|input: &String| -> Result<(), &str> {
-                    let numbers: Vec<&str> = input.split('.').collect();
-    
-                    if numbers.len() != 4 {
-                        return Err("IPv4 address must have exactly 4 octets");
+    let mut next_ip = true;
+    let mut loadbalancer_ip: Vec<String> = vec![];
+    while next_ip {
+        let node_ip: String = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("Connected Loadbalancers")
+            .validate_with(|input: &String| -> Result<(), &str> {
+                let numbers: Vec<&str> = input.split('.').collect();
+
+                if numbers.len() != 4 {
+                    return Err("IPv4 address must have exactly 4 octets");
+                }
+
+                for num in numbers {
+                    match num.parse::<u8>() {
+                        Ok(_) => continue,
+                        Err(_) => return Err("Each octet must be a number between 0 and 255"),
                     }
-    
-                    for num in numbers {
-                        match num.parse::<u8>() {
-                            Ok(_) => continue,
-                            Err(_) => return Err("Each octet must be a number between 0 and 255"),
-                        }
-                    }
-    
-                    Ok(())
-                })
-                .interact_text()
-                .unwrap();
-            loadbalancer_ip.push(node_ip);
-    
-            let add_more = Confirm::with_theme(&ColorfulTheme::default())
-                .with_prompt("Add more nodes?")
-                .default(false)
-                .interact()
-                .unwrap();
-            if !add_more {
-                next_ip = false;
-            }
+                }
+
+                Ok(())
+            })
+            .interact_text()
+            .unwrap();
+        loadbalancer_ip.push(node_ip);
+
+        let add_more = Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt("Add more nodes?")
+            .default(false)
+            .interact()
+            .unwrap();
+        if !add_more {
+            next_ip = false;
         }
+    }
 
     let config = ServerConfig {
         ip,
         listener: listener_selected,
-        loadbalancer_ip
+        loadbalancer_ip,
     };
     println!("Server Config: {:?}", config);
 
@@ -136,7 +136,6 @@ fn validate_config(config: &ServerConfig) -> bool {
     }
     bar.finish_with_message("Validation complete.");
     valid
-
 }
 
 fn is_ip_live(ip: &str) -> bool {

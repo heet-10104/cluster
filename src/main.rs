@@ -1,15 +1,17 @@
 mod common;
+use dialoguer::Confirm;
 use dialoguer::{theme::ColorfulTheme, Select};
 use std::io::{self, Write};
-use std::{thread, time::Duration};
+use tokio::runtime::Runtime;
 
 mod config;
 mod subapps;
-use config::loadbalancer_config::configure_load_balancer;
+use crate::subapps::loadbalancer::balance_load;
+use crate::subapps::node::server_listener;
 use config::loadbalancer_config::Features;
 use config::loadbalancer_config::Protocol;
-use config::server_config::configure_server;
-
+use config::loadbalancer_config::{configure_load_balancer, LoadBalancerConfig};
+use config::server_config::{configure_server, ServerConfig};
 enum NodeType {
     LoadBalancer,
     Server,
@@ -48,6 +50,50 @@ fn main() {
 
     match node_type {
         NodeType::LoadBalancer => {
+            let cfg_path: Result<std::path::PathBuf, confy::ConfyError> =
+                confy::get_configuration_file_path("load-balancer-config", None);
+            if cfg_path.is_ok() {
+                println!(
+                    "found a file config file for load-balancer at {:?}",
+                    cfg_path
+                );
+                let cfg: LoadBalancerConfig =
+                    confy::load("load-balancer-config", None).expect("Failed to load config");
+                println!("{:?}", cfg);
+                let proceed = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt("want to continue with old config?")
+                    .default(false)
+                    .interact()
+                    .unwrap();
+                if proceed {
+                    let rt = Runtime::new().unwrap();
+                    rt.block_on(balance_load());
+                }
+            }
+        }
+        NodeType::Server => {
+            let cfg_path = confy::get_configuration_file_path("load-balancer-config", None);
+            if cfg_path.is_ok() {
+                println!("found a file config file for server at {:?}", cfg_path);
+                let cfg: ServerConfig =
+                    confy::load("server-config", None).expect("Failed to load config");
+                println!("{:?}", cfg);
+                let proceed = Confirm::with_theme(&ColorfulTheme::default())
+                    .with_prompt("want to continue with old config?")
+                    .default(false)
+                    .interact()
+                    .unwrap();
+                if proceed {
+                    let rt = Runtime::new().unwrap();
+                    rt.block_on(server_listener());
+                }
+            }
+        }
+        NodeType::MicroServer => {}
+    };
+
+    match node_type {
+        NodeType::LoadBalancer => {
             let protocols = [
                 Protocol::RobinRound,
                 Protocol::LeastConnections,
@@ -60,10 +106,5 @@ fn main() {
             configure_server();
         }
         NodeType::MicroServer => {}
-    }
-
-    loop {
-        println!("Main application running...");
-        thread::sleep(Duration::from_secs(1));
     }
 }
