@@ -7,7 +7,7 @@ use tokio::runtime::Runtime;
 
 use crate::subapps::loadbalancer::balance_load;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub enum Features {
     HealthCheck,
     ApiHealthCheck,

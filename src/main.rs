@@ -5,12 +5,14 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use std::io::{self, Write};
 use tokio::runtime::Runtime;
 
+use crate::common::utilities::log_init;
 use crate::subapps::loadbalancer::balance_load;
 use crate::subapps::node::server_listener;
 use config::loadbalancer_config::{
     configure_load_balancer, Features, LoadBalancerConfig, Protocol,
 };
 use config::server_config::{configure_server, ServerConfig};
+
 enum NodeType {
     LoadBalancer,
     Server,
@@ -30,7 +32,7 @@ impl ToString for NodeType {
 
 fn main() {
     io::stdout().flush().unwrap();
-
+    log_init();
     let node_types = [
         NodeType::LoadBalancer,
         NodeType::Server,
