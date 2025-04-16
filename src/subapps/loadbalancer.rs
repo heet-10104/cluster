@@ -7,19 +7,18 @@ use axum::{
     routing::get,
     Router,
 };
-use core::time;
-use reqwest::redirect::Action;
 use reqwest::Client;
-use serde::de::Expected;
+
 use serde::Deserialize;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     sync::Arc,
-    thread::sleep,
     time::Duration,
 };
 use tokio::net::TcpListener;
+use tokio::time::sleep;
 
 use serde_json;
 use std::fs;
@@ -32,6 +31,7 @@ struct LoadBalancerState {
     features: Arc<Vec<Features>>,
     index: Arc<AtomicUsize>,
     client: Client,
+    db: PgPool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,7 +39,6 @@ struct ApiConfig {
     apis: Vec<Api>,
     check_interval_ms: u64,
     timeout_ms: u64,
-    expected_body_contains: String,
     failure_threshold: u32,
 }
 
@@ -52,7 +51,7 @@ struct Api {
 }
 
 impl LoadBalancerState {
-    fn new() -> Self {
+    fn new(db: PgPool) -> Self {
         let cfg: LoadBalancerConfig =
             confy::load("load-balancer-config", None).expect("Failed to load config");
         let ip = cfg.ip;
@@ -68,6 +67,7 @@ impl LoadBalancerState {
             features,
             index,
             client: Client::new(),
+            db,
         }
     }
 
@@ -128,7 +128,36 @@ async fn health_check(servers: Arc<Vec<String>>) {
                 println!("upload: {}", metrics.netspeed[1]);
             }
         }
-        sleep(Duration::from_secs(60));
+        sleep(Duration::from_secs(60)).await;
+    }
+}
+
+async fn failed_url_check(
+    failure_threshold: u32,
+    url: &String,
+    client: Client,
+    resp: reqwest::Response,
+) {
+    let mut pass = false;
+    for i in 0..failure_threshold {
+        let response = client.get(url).send().await;
+        match response {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    pass = true;
+                    break;
+                }
+            }
+            Err(e) if e.is_timeout() => {
+                println!("timeout for try {}", i)
+            }
+            Err(e) => {
+                println!("error {}", e);
+            }
+        }
+    }
+    if pass == false {
+        println!("response for {} : {}", url, resp.status());
     }
 }
 
@@ -152,72 +181,39 @@ async fn api_health_check(api_config: ApiConfig) {
                     match response {
                         Ok(resp) => {
                             if !resp.status().is_success() {
-                                let mut pass = false;
-                                for i in 0..failure_threshold {
-                                    let response = client.get(url).send().await;
-                                    match response {
-                                        Ok(resp) => {
-                                            if resp.status().is_success() {
-                                                pass = true;
-                                                break;
-                                            }
-                                        }
-                                        Err(e) if e.is_timeout() => {
-                                            println!("timeout for try {}", i)
-                                        }
-                                        Err(e) => {
-                                            println!("error {}", e);
-                                        }
-                                    }
-                                }
-                                if pass == false {
-                                    println!("response for {} : {}", url, resp.status());
-                                }
+                                failed_url_check(failure_threshold, url, client, resp).await;
                             }
                         }
                         Err(_) => {
-                            let mut pass = false;
-                            for i in 0..failure_threshold {
-                                let response = client.get(url).send().await;
-                                match response {
-                                    Ok(resp) => {
-                                        if resp.status().is_success() {
-                                            pass = true;
-                                            break;
-                                        }
-                                    }
-                                    Err(e) if e.is_timeout() => {
-                                        println!("timeout for try {}", i)
-                                    }
-                                    Err(e) => {
-                                        println!("error {}", e);
-                                    }
-                                }
-                            }
-                            if pass == false {
-                                println!("api {} failed", url);
-                            }
+                            let resp = client.get(url).send().await;
+                            failed_url_check(failure_threshold, url, client, resp.unwrap()).await;
                         }
                     }
                 }
                 "POST" => {
-                    let response = client
-                        .post(url)
-                        .json(&body)
-                        .send()
-                        .await
-                        .expect("api response");
+                    let response = client.post(url).json(&body).send().await;
+                    match response {
+                        Ok(resp) => {
+                            if !resp.status().is_success() {
+                                failed_url_check(failure_threshold, url, client, resp).await;
+                            }
+                        }
+                        Err(_) => {
+                            let resp = client.get(url).send().await;
+                            failed_url_check(failure_threshold, url, client, resp.unwrap()).await;
+                        }
+                    }
                 }
                 _ => {}
             }
         }
-        sleep(Duration::from_secs(time_interval));
+        sleep(Duration::from_secs(time_interval)).await;
     }
 }
 
-pub async fn balance_load() {
+pub async fn balance_load(db: PgPool) {
     //todo make switch to protocol
-    let load_balancer_state = LoadBalancerState::new();
+    let load_balancer_state = LoadBalancerState::new(db);
     let address = load_balancer_state.clone().ip + ":3000";
     let servers = load_balancer_state.clone().servers;
 
@@ -225,9 +221,7 @@ pub async fn balance_load() {
         .features
         .contains(&Features::HealthCheck)
     {
-        tokio::spawn(async move {
-            health_check(servers).await;
-        });
+        tokio::spawn(health_check(servers));
     }
     if load_balancer_state
         .features
@@ -242,9 +236,7 @@ pub async fn balance_load() {
             println!("{:?}", api);
         }
 
-        tokio::spawn(async move {
-            api_health_check(api_config).await;
-        });
+        tokio::spawn(api_health_check(api_config));
     }
 
     let app = Router::new()
@@ -260,5 +252,13 @@ async fn handle_request(
     lb: State<LoadBalancerState>,
     req: Request<Body>,
 ) -> Result<Response<String>, StatusCode> {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+
+    let path = uri.path();
+    let query = uri.query().unwrap_or("");
+
+    println!("Incoming request: {} {}?{}", method, path, query);
+
     lb.forward_request(req).await
 }

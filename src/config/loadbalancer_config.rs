@@ -1,9 +1,9 @@
 use confy;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, MultiSelect, Select};
 use indicatif::{ProgressBar, ProgressStyle};
+use sqlx::PgPool;
 use std::process::Command;
 use std::{thread, time::Duration};
-use tokio::runtime::Runtime;
 
 use crate::subapps::loadbalancer::balance_load;
 
@@ -55,7 +55,7 @@ impl ToString for Protocol {
     }
 }
 
-pub fn configure_load_balancer(protocols: &[Protocol], features: &[Features]) {
+pub async fn configure_load_balancer(protocols: &[Protocol], features: &[Features], db: PgPool) {
     let protocol = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Select Protocol")
         .default(0)
@@ -144,8 +144,7 @@ pub fn configure_load_balancer(protocols: &[Protocol], features: &[Features]) {
         return;
     }
     confy::store("load-balancer-config", None, config).expect("Failed to store config");
-    let rt = Runtime::new().unwrap();
-    rt.block_on(balance_load());
+    balance_load(db).await;
 }
 
 fn validate_config(config: &LoadBalancerConfig) -> bool {

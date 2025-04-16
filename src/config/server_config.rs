@@ -1,7 +1,6 @@
 use dialoguer::{theme::ColorfulTheme, Confirm, Input};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::{process::Command, thread, time::Duration};
-use tokio::runtime::Runtime;
 
 use crate::subapps::node::server_listener;
 
@@ -27,7 +26,7 @@ pub struct ServerConfig {
     pub loadbalancer_ip: Vec<String>,  // the
 }
 
-pub fn configure_server() {
+pub async fn configure_server() {
     let ip: String = Input::new()
         .with_prompt("Enter the IP address of the server(tailscale ip)")
         .interact_text()
@@ -100,8 +99,7 @@ pub fn configure_server() {
         return;
     }
     confy::store("server-config", None, config).expect("Failed to store config");
-    let rt = Runtime::new().unwrap();
-    rt.block_on(server_listener());
+    server_listener().await;
 }
 
 fn validate_config(config: &ServerConfig) -> bool {

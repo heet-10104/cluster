@@ -1,11 +1,12 @@
 mod common;
 mod config;
 mod subapps;
+mod db_ops;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use std::io::{self, Write};
-use tokio::runtime::Runtime;
 
-use crate::common::utilities::log_init;
+use crate::common::utilities::{db_init, log_init};
+
 use crate::subapps::loadbalancer::balance_load;
 use crate::subapps::node::server_listener;
 use config::loadbalancer_config::{
@@ -30,9 +31,12 @@ impl ToString for NodeType {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     io::stdout().flush().unwrap();
     log_init();
+
+    let db = db_init().await.expect("connetion failed");
     let node_types = [
         NodeType::LoadBalancer,
         NodeType::Server,
@@ -65,17 +69,17 @@ fn main() {
                     .interact()
                     .unwrap();
                 if proceed {
-                    let rt = Runtime::new().unwrap();
-                    rt.block_on(balance_load());
+                    balance_load(db).await;
                 }
+            } else {
+                let protocols = [
+                    Protocol::RobinRound,
+                    Protocol::LeastConnections,
+                    Protocol::LeastResponse,
+                ];
+                let features = [Features::HealthCheck, Features::ApiHealthCheck];
+                configure_load_balancer(&protocols, &features, db).await;
             }
-            let protocols = [
-                Protocol::RobinRound,
-                Protocol::LeastConnections,
-                Protocol::LeastResponse,
-            ];
-            let features = [Features::HealthCheck, Features::ApiHealthCheck];
-            configure_load_balancer(&protocols, &features);
         }
         NodeType::Server => {
             let cfg_path = confy::get_configuration_file_path("load-balancer-config", None);
@@ -90,11 +94,11 @@ fn main() {
                     .interact()
                     .unwrap();
                 if proceed {
-                    let rt = Runtime::new().unwrap();
-                    rt.block_on(server_listener());
+                    server_listener().await;
                 }
+            } else {
+                configure_server().await;
             }
-            configure_server();
         }
         NodeType::MicroServer => {}
     };
