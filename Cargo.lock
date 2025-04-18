@@ -296,6 +296,7 @@ dependencies = [
  "confy",
  "dialoguer",
  "dotenv",
+ "dotenvy",
  "hyper",
  "indicatif",
  "log",

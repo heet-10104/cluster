@@ -21,11 +21,10 @@ pub fn log_init() {
     log4rs::init_raw_config(config).unwrap();
 }
 
-pub async fn db_init() -> Result<(PgPool), sqlx::Error> {
-    // dotenv().ok();
+pub async fn db_init() -> Result<PgPool, sqlx::Error> {
 
-    // let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let database_url = "postgres://postgres:password@localhost/cluster".to_string();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    //let database_url = "postgres://postgres:password@localhost/cluster".to_string();
 
     let pool = PgPool::connect(&database_url).await.expect("");
     sqlx::migrate!("./migrations").run(&pool).await?;

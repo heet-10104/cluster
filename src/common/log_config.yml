@@ -5,7 +5,7 @@ appenders:
       pattern: "{d(%+)(utc)} [{f}:{L}] {h({l})} {M}:{m}{n}"
     filters:
       - kind: threshold
-        level: trace
+        level: info
   file:
     kind: file
     path: "log/file.log"
@@ -26,7 +26,7 @@ appenders:
         base: 0
         count: 2
 root:
-  level: trace
+  level: info
   appenders:
     - stdout
     - file

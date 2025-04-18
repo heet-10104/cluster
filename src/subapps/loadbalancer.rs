@@ -1,4 +1,5 @@
 use crate::config::loadbalancer_config::{Features, LoadBalancerConfig, Protocol};
+use crate::db_ops::lb_db::{insert_apis, update_hit};
 use crate::subapps::node::Metrics;
 use axum::{
     body::{to_bytes, Body},
@@ -35,19 +36,19 @@ struct LoadBalancerState {
 }
 
 #[derive(Debug, Deserialize)]
-struct ApiConfig {
-    apis: Vec<Api>,
-    check_interval_ms: u64,
-    timeout_ms: u64,
-    failure_threshold: u32,
+pub struct ApiConfig {
+    pub apis: Vec<Api>,
+    pub check_interval_ms: u64,
+    pub timeout_ms: u64,
+    pub failure_threshold: u32,
 }
 
 #[derive(Debug, Deserialize, Clone)]
-struct Api {
-    url: String,
-    method: String,
+pub struct Api {
+    pub url: String,
+    pub method: String,
     #[serde(default)]
-    body: Option<HashMap<String, String>>,
+    pub body: Option<HashMap<String, String>>,
 }
 
 impl LoadBalancerState {
@@ -227,14 +228,16 @@ pub async fn balance_load(db: PgPool) {
         .features
         .contains(&Features::ApiHealthCheck)
     {
-        let data = fs::read_to_string("api.json").expect("Unable to read file");
+        let data = fs::read_to_string("./src/subapps/api.json").expect("Unable to read file");
 
         let api_config: ApiConfig = serde_json::from_str(&data).expect("Unable to parse JSON");
         let apis = api_config.apis.clone();
 
-        for api in apis {
+        for api in apis.iter() {
             println!("{:?}", api);
         }
+
+        let res = insert_apis(&apis, &load_balancer_state.db).await;
 
         tokio::spawn(api_health_check(api_config));
     }
@@ -242,6 +245,7 @@ pub async fn balance_load(db: PgPool) {
     let app = Router::new()
         .route("/{*wildcard}", get(handle_request).post(handle_request))
         .with_state(load_balancer_state);
+
     let listener = TcpListener::bind(address).await.unwrap();
     println!("loadbalancer is listening...");
     axum::serve(listener, app).await.unwrap();
@@ -254,9 +258,10 @@ async fn handle_request(
 ) -> Result<Response<String>, StatusCode> {
     let method = req.method().clone();
     let uri = req.uri().clone();
-
     let path = uri.path();
     let query = uri.query().unwrap_or("");
+
+    let res = update_hit(path, &lb.db).await;
 
     println!("Incoming request: {} {}?{}", method, path, query);
 

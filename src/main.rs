@@ -1,7 +1,7 @@
 mod common;
 mod config;
-mod subapps;
 mod db_ops;
+mod subapps;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use std::io::{self, Write};
 
@@ -34,8 +34,9 @@ impl ToString for NodeType {
 #[tokio::main]
 async fn main() {
     io::stdout().flush().unwrap();
-    log_init();
+    dotenvy::dotenv().ok();
 
+    log_init();
     let db = db_init().await.expect("connetion failed");
     let node_types = [
         NodeType::LoadBalancer,
@@ -70,15 +71,15 @@ async fn main() {
                     .unwrap();
                 if proceed {
                     balance_load(db).await;
+                } else {
+                    let protocols = [
+                        Protocol::RobinRound,
+                        Protocol::LeastConnections,
+                        Protocol::LeastResponse,
+                    ];
+                    let features = [Features::HealthCheck, Features::ApiHealthCheck];
+                    configure_load_balancer(&protocols, &features, db).await;
                 }
-            } else {
-                let protocols = [
-                    Protocol::RobinRound,
-                    Protocol::LeastConnections,
-                    Protocol::LeastResponse,
-                ];
-                let features = [Features::HealthCheck, Features::ApiHealthCheck];
-                configure_load_balancer(&protocols, &features, db).await;
             }
         }
         NodeType::Server => {
@@ -95,9 +96,9 @@ async fn main() {
                     .unwrap();
                 if proceed {
                     server_listener().await;
+                } else {
+                    configure_server().await;
                 }
-            } else {
-                configure_server().await;
             }
         }
         NodeType::MicroServer => {}
