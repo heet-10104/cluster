@@ -15,7 +15,7 @@ use std::env;
 // trace!("Doesn't go to console as it is filtered out");
 
 pub fn log_init() {
-    let config_str = include_str!("log_config.yml");
+    let config_str = include_str!("log_config.yml"); //env
     let config = serde_yaml::from_str(config_str).expect("error parsing log config");
 
     log4rs::init_raw_config(config).expect("logger failed to initialize");

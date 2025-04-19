@@ -2,6 +2,7 @@ mod common;
 mod config;
 mod db_ops;
 mod subapps;
+mod validator;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use log::{error, info};
 use std::io::{self, Write};
@@ -87,8 +88,8 @@ async fn main() {
                     ];
                     let features = [Features::HealthCheck, Features::ApiHealthCheck];
                     match configure_load_balancer(&protocols, &features).await {
-                        Ok(()) => {},
-                        Err(e) =>{
+                        Ok(()) => {}
+                        Err(e) => {
                             error!("{}", e);
                             std::process::exit(1);
                         }

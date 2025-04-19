@@ -19,6 +19,7 @@ pub async fn update_hit(path: &str, db: &PgPool) -> Result<(), sqlx::Error> {
 
     Ok(())
 }
+
 pub async fn update_error_code(
     path: &str,
     status: &StatusCode,

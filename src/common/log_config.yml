@@ -1,3 +1,4 @@
+#path to env
 appenders:
   stdout:
     kind: console
@@ -5,28 +6,28 @@ appenders:
       pattern: "{d(%+)(utc)} [{f}:{L}] {h({l})} {M}:{m}{n}"
     filters:
       - kind: threshold
-        level: info
+        level: info #env
   file:
     kind: file
-    path: "log/file.log"
+    path: "log/file.log" #env
     encoder:
       pattern: "[{d(%Y-%m-%dT%H:%M:%S%.6f)} {h({l}):<5.5} {M}] {m}{n}"
   rollingfile:
     kind: rolling_file
-    path: "log/rolling_file.log"
+    path: "log/rolling_file.log" #env
     encoder:
       pattern: "[{d(%Y-%m-%dT%H:%M:%S%.6f)} {h({l}):<5.5} {M}] {m}{n}"
     policy:
       trigger:
         kind: time
-        interval: 1 minute
+        interval: 1 minute #env
       roller:
         kind: fixed_window
-        pattern: "log/old-rolling_file-{}.log"
+        pattern: "log/old-rolling_file-{}.log" #env
         base: 0
         count: 2
 root:
-  level: info
+  level: info #env
   appenders:
     - stdout
     - file

@@ -1,8 +1,6 @@
 use dialoguer::{theme::ColorfulTheme, Confirm, Input};
-use indicatif::{ProgressBar, ProgressStyle};
-use std::{process::Command, thread, time::Duration};
-
 use crate::subapps::node::server_listener;
+use crate::validator::validate::validate_server_config;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ServerListener {
@@ -94,7 +92,7 @@ pub async fn configure_server() {
     };
     println!("Server Config: {:?}", config);
 
-    if !validate_config(&config) {
+    if !validate_server_config(&config) {
         println!("Invalid configuration. Please check the IP addresses and try again.");
         return;
     }
@@ -102,43 +100,3 @@ pub async fn configure_server() {
     server_listener().await;
 }
 
-fn validate_config(config: &ServerConfig) -> bool {
-    let ip = &config.ip;
-    let mut valid = true;
-    if is_ip_live(&ip) {
-        println!("server {} is live", ip);
-    } else {
-        println!("server {} is not reachable", ip);
-        let _ = !valid;
-    }
-
-    let loadblancers: Vec<String> = config.loadbalancer_ip.iter().map(|ip| ip.clone()).collect();
-    let bar = ProgressBar::new(loadblancers.len() as u64);
-    bar.set_style(
-        ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} Checking {msg}")
-            .unwrap(),
-    );
-    for ip in &loadblancers {
-        bar.set_message(ip.clone());
-        if is_ip_live(ip) {
-            println!("{} is live", ip);
-        } else {
-            valid = false;
-            println!("{} is not reachable", ip);
-        }
-        bar.inc(1);
-        thread::sleep(Duration::from_millis(500));
-    }
-    bar.finish_with_message("Validation complete.");
-    valid
-}
-
-fn is_ip_live(ip: &str) -> bool {
-    let output = Command::new("ping").arg("-c").arg("1").arg(ip).output();
-
-    match output {
-        Ok(result) => result.status.success(),
-        Err(_) => false,
-    }
-}
