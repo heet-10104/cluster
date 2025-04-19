@@ -2,6 +2,7 @@ mod common;
 mod config;
 mod db_ops;
 mod subapps;
+mod tui;
 mod validator;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use log::{error, info};
@@ -15,7 +16,7 @@ use config::loadbalancer_config::{
     configure_load_balancer, Features, LoadBalancerConfig, Protocol,
 };
 use config::server_config::{configure_server, ServerConfig};
-
+use crate::tui::api_dash::render_api_dash;
 enum NodeType {
     LoadBalancer,
     Server,
@@ -33,8 +34,12 @@ impl ToString for NodeType {
     }
 }
 
+
 #[tokio::main]
 async fn main() {
+
+    render_api_dash();
+
     io::stdout().flush().unwrap();
     dotenvy::dotenv().ok();
 
