@@ -1,14 +1,14 @@
 {
     "apis": [
         {
-            "url": "http://127.0.0.1:8081/health",
+            "url": "http://100.67.188.84:8081/health",
             "method": "POST",
             "body": {
                 "ping": "pong"
             }
         },
         {
-            "url": "http://127.0.0.1:8082/health",
+            "url": "http://100.67.188.84:8082/health",
             "method": "GET"
         }
     ],

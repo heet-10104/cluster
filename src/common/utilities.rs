@@ -1,8 +1,7 @@
-use dotenv::dotenv;
-use log::{error, info, trace};
+use log::info;
 use log4rs;
 use serde_yaml;
-use sqlx::{database, PgPool};
+use sqlx::PgPool;
 use std::env;
 
 // ERROR
@@ -17,19 +16,15 @@ use std::env;
 
 pub fn log_init() {
     let config_str = include_str!("log_config.yml");
-    let config = serde_yaml::from_str(config_str).unwrap();
-    log4rs::init_raw_config(config).unwrap();
+    let config = serde_yaml::from_str(config_str).expect("error parsing log config");
+
+    log4rs::init_raw_config(config).expect("logger failed to initialize");
 }
 
 pub async fn db_init() -> Result<PgPool, sqlx::Error> {
-
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    //let database_url = "postgres://postgres:password@localhost/cluster".to_string();
-
-    let pool = PgPool::connect(&database_url).await.expect("");
+    let pool = PgPool::connect(&database_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
-
-    println!("Connected to the database ✅");
-
+    info!("connected to database");
     Ok(pool)
 }

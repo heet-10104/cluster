@@ -1,11 +1,9 @@
-use confy;
+use confy::{self, ConfyError};
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, MultiSelect, Select};
 use indicatif::{ProgressBar, ProgressStyle};
-use sqlx::PgPool;
+use log::{error, info};
 use std::process::Command;
 use std::{thread, time::Duration};
-
-use crate::subapps::loadbalancer::balance_load;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub enum Features {
@@ -55,7 +53,10 @@ impl ToString for Protocol {
     }
 }
 
-pub async fn configure_load_balancer(protocols: &[Protocol], features: &[Features], db: PgPool) {
+pub async fn configure_load_balancer(
+    protocols: &[Protocol],
+    features: &[Features],
+) -> Result<(), ConfyError> {
     let protocol = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Select Protocol")
         .default(0)
@@ -137,14 +138,13 @@ pub async fn configure_load_balancer(protocols: &[Protocol], features: &[Feature
         features: selected_features.clone(),
         nodes: nodes.clone(),
     };
-    println!("Load Balancer Config: {:#?}", config);
+    info!("Load Balancer Config: {:#?}", config);
 
     if !validate_config(&config) {
-        println!("Invalid configuration. Please check the IP addresses and try again.");
-        return;
+        error!("Invalid configuration. Please check the IP addresses and try again.");
+        std::process::exit(1);
     }
-    confy::store("load-balancer-config", None, config).expect("Failed to store config");
-    balance_load(db).await;
+    confy::store("load-balancer-config", None, config)
 }
 
 fn validate_config(config: &LoadBalancerConfig) -> bool {

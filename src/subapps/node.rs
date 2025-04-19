@@ -2,6 +2,7 @@
 //this works in parallel to the application run by the user
 use crate::config::server_config::ServerConfig;
 use axum::{http::StatusCode, response::IntoResponse, routing::get, Json, Router};
+use log::{warn, error};
 use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -26,7 +27,9 @@ pub async fn server_listener() {
         .route("/metrics", get(metrics_handler));
 
     let address = server_ip + ":3000";
-    let listener = tokio::net::TcpListener::bind(address).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(address)
+        .await
+        .expect("failed to listen...");
     println!("server is listening.....");
     axum::serve(listener, app).await.unwrap();
 }
@@ -67,21 +70,26 @@ async fn netspeed_download() -> f64 {
     let client = Client::new();
 
     let start = Instant::now();
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .expect("should download the file");
-    let bytes = response
-        .bytes()
-        .await
-        .expect("should get the bytes recieved");
-    let elapsed = start.elapsed().as_secs_f64();
+    let response = client.get(url).send().await;
+    match response {
+        Ok(response) => {
+            let bytes = response
+                .bytes()
+                .await
+                .expect("should get the bytes recieved");
+            let elapsed = start.elapsed().as_secs_f64();
 
-    let size_in_mb = bytes.len() as f64 / (1024.0 * 1024.0);
-    let speed_mbps = size_in_mb / elapsed * 8.0;
+            let size_in_mb = bytes.len() as f64 / (1024.0 * 1024.0);
+            let speed_mbps = size_in_mb / elapsed * 8.0;
 
-    speed_mbps
+            speed_mbps
+        }
+        Err(e) => {
+            warn!("response from speedtest server failed!");
+            error!("{}", e);
+            return 0.0;
+        }
+    }
 }
 
 async fn _netspeed_upload() -> f64 {

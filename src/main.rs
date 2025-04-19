@@ -3,6 +3,7 @@ mod config;
 mod db_ops;
 mod subapps;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
+use log::{error, info};
 use std::io::{self, Write};
 
 use crate::common::utilities::{db_init, log_init};
@@ -37,7 +38,14 @@ async fn main() {
     dotenvy::dotenv().ok();
 
     log_init();
-    let db = db_init().await.expect("connetion failed");
+    let db = match db_init().await {
+        Ok(pool) => pool,
+        Err(e) => {
+            error!("❌ Failed to connect to database: {e}");
+            std::process::exit(1);
+        }
+    };
+
     let node_types = [
         NodeType::LoadBalancer,
         NodeType::Server,
@@ -57,13 +65,13 @@ async fn main() {
             let cfg_path: Result<std::path::PathBuf, confy::ConfyError> =
                 confy::get_configuration_file_path("load-balancer-config", None);
             if cfg_path.is_ok() {
-                println!(
+                info!(
                     "found a file config file for load-balancer at {:?}",
                     cfg_path
                 );
                 let cfg: LoadBalancerConfig =
-                    confy::load("load-balancer-config", None).expect("Failed to load config");
-                println!("{:?}", cfg);
+                    confy::load("load-balancer-config", None).expect("❌ failed to load config");
+                info!("{:?}", cfg);
                 let proceed = Confirm::with_theme(&ColorfulTheme::default())
                     .with_prompt("want to continue with old config?")
                     .default(false)
@@ -78,7 +86,14 @@ async fn main() {
                         Protocol::LeastResponse,
                     ];
                     let features = [Features::HealthCheck, Features::ApiHealthCheck];
-                    configure_load_balancer(&protocols, &features, db).await;
+                    match configure_load_balancer(&protocols, &features).await {
+                        Ok(()) => {},
+                        Err(e) =>{
+                            error!("{}", e);
+                            std::process::exit(1);
+                        }
+                    };
+                    balance_load(db).await;
                 }
             }
         }

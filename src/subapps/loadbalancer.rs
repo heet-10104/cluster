@@ -1,5 +1,5 @@
 use crate::config::loadbalancer_config::{Features, LoadBalancerConfig, Protocol};
-use crate::db_ops::lb_db::{insert_apis, update_hit};
+use crate::db_ops::lb_db::{insert_apis, update_error_code, update_hit};
 use crate::subapps::node::Metrics;
 use axum::{
     body::{to_bytes, Body},
@@ -8,11 +8,15 @@ use axum::{
     routing::get,
     Router,
 };
+use log::{error, info, warn};
 use reqwest::Client;
 
+use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo};
 use serde::Deserialize;
+use serde_json;
 use sqlx::PgPool;
 use std::collections::HashMap;
+use std::fs;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     sync::Arc,
@@ -20,9 +24,6 @@ use std::{
 };
 use tokio::net::TcpListener;
 use tokio::time::sleep;
-
-use serde_json;
-use std::fs;
 
 #[derive(Clone)]
 struct LoadBalancerState {
@@ -54,7 +55,7 @@ pub struct Api {
 impl LoadBalancerState {
     fn new(db: PgPool) -> Self {
         let cfg: LoadBalancerConfig =
-            confy::load("load-balancer-config", None).expect("Failed to load config");
+            confy::load("load-balancer-config", None).expect("failed to load config");
         let ip = cfg.ip;
         let protocol = Arc::new(cfg.protocol);
         let features = Arc::new(cfg.features.clone());
@@ -73,12 +74,15 @@ impl LoadBalancerState {
     }
 
     async fn forward_request(&self, req: Request<Body>) -> Result<Response<String>, StatusCode> {
+        let (parts, body) = req.into_parts();
+
+        let original_path = parts.uri.path();
         let server_index = self.index.fetch_add(1, Ordering::SeqCst) % self.servers.len();
         let server_url = &self.servers[server_index];
 
-        let uri = format!("{}{}", server_url, req.uri());
-        let method = req.method().clone();
-        let body = to_bytes(req.into_body(), usize::MAX)
+        let uri = format!("{}{}", server_url, parts.uri);
+        let method = parts.method.clone();
+        let body = to_bytes(body, usize::MAX)
             .await
             .map_err(|_| StatusCode::BAD_REQUEST)?;
 
@@ -91,6 +95,16 @@ impl LoadBalancerState {
             .map_err(|_| StatusCode::BAD_GATEWAY)?;
 
         let status = response.status();
+        if !status.is_success() {
+            match update_error_code(&original_path, &status, &self.db).await {
+                Ok(()) => {}
+                Err(e) => {
+                    warn!("error code failed to update, moitering might not work as expected!");
+                    error!("{}", e);
+                }
+            }
+        }
+        info!("status code for url {}: {}", uri, status);
         let body = response.text().await.unwrap_or_else(|_| "".to_string());
 
         Ok(Response::builder().status(status).body(body).unwrap())
@@ -103,31 +117,37 @@ async fn health_check(servers: Arc<Vec<String>>) {
             let url = "http://".to_owned() + &ip + ":3000" + "/metrics";
             let client = Client::new();
 
-            let response = client.get(url).send().await.expect("metrtics from server");
-            if response.status().is_redirection() {
-                println!(
-                    "server {} gave redirectional error {}",
-                    ip,
-                    response.status()
-                );
-            }
-            if response.status().is_server_error() {
-                println!("server {} gave server error {}", ip, response.status());
-            }
-            let metrics: Metrics = response.json().await.expect("failed to parse JSON");
-            println!("{:?}", metrics);
-            if metrics.cpu > 90.0 {
-                println!("cpu usage: {}", metrics.cpu);
-            }
-            if metrics.ram > 90.0 {
-                println!("ram usage: {}", metrics.ram);
-            }
-            if metrics.netspeed[0] < 50.0 {
-                println!("download: {}", metrics.netspeed[0]);
-            }
-            if metrics.netspeed[1] < 50.0 {
-                println!("upload: {}", metrics.netspeed[1]);
-            }
+            match client.get(url).send().await {
+                Ok(response) => {
+                    if response.status().is_redirection() {
+                        info!(
+                            "server {} gave redirectional error {}",
+                            ip,
+                            response.status()
+                        );
+                    }
+                    if response.status().is_server_error() {
+                        warn!("server {} gave server error {}", ip, response.status());
+                    }
+                    let metrics: Metrics = response.json().await.expect("failed to parse JSON");
+                    info!("{:?}", metrics);
+                    if metrics.cpu > 90.0 {
+                        warn!("cpu usage: {}", metrics.cpu);
+                    }
+                    if metrics.ram > 90.0 {
+                        warn!("ram usage: {}", metrics.ram);
+                    }
+                    if metrics.netspeed[0] < 50.0 {
+                        warn!("download: {}", metrics.netspeed[0]);
+                    }
+                    if metrics.netspeed[1] < 50.0 {
+                        warn!("upload: {}", metrics.netspeed[1]);
+                    }
+                }
+                Err(e) => {
+                    error!("{}", e);
+                }
+            };
         }
         sleep(Duration::from_secs(60)).await;
     }
@@ -150,15 +170,15 @@ async fn failed_url_check(
                 }
             }
             Err(e) if e.is_timeout() => {
-                println!("timeout for try {}", i)
+                warn!("timeout for try {}", i)
             }
             Err(e) => {
-                println!("error {}", e);
+                warn!("error {}", e);
             }
         }
     }
     if pass == false {
-        println!("response for {} : {}", url, resp.status());
+        error!("response for {} : {}", url, resp.status());
     }
 }
 
@@ -212,42 +232,72 @@ async fn api_health_check(api_config: ApiConfig) {
     }
 }
 
+async fn load_balancer_connections() {
+    let af_flags = AddressFamilyFlags::IPV4;
+    let proto_flags = ProtocolFlags::TCP;
+
+    match get_sockets_info(af_flags, proto_flags) {
+        Ok(sockets) => {
+            let tcp_count = sockets
+                .into_iter()
+                .filter(|info| matches!(info.protocol_socket_info, ProtocolSocketInfo::Tcp(_)))
+                .count();
+            if tcp_count > 100 {
+                warn!("connections: {}", tcp_count);
+            }
+        }
+        Err(err) => {
+            warn!("Failed to get connections: {}", err);
+        }
+    }
+}
+
 pub async fn balance_load(db: PgPool) {
     //todo make switch to protocol
     let load_balancer_state = LoadBalancerState::new(db);
     let address = load_balancer_state.clone().ip + ":3000";
     let servers = load_balancer_state.clone().servers;
-
+    tokio::spawn(load_balancer_connections());
     if load_balancer_state
         .features
         .contains(&Features::HealthCheck)
     {
         tokio::spawn(health_check(servers));
     }
+
     if load_balancer_state
         .features
         .contains(&Features::ApiHealthCheck)
     {
-        let data = fs::read_to_string("./src/subapps/api.json").expect("Unable to read file");
+        let data = fs::read_to_string("./src/subapps/api.json").expect("unable to read file");
 
         let api_config: ApiConfig = serde_json::from_str(&data).expect("Unable to parse JSON");
         let apis = api_config.apis.clone();
 
         for api in apis.iter() {
-            println!("{:?}", api);
+            info!("{:?}", api);
         }
 
-        let res = insert_apis(&apis, &load_balancer_state.db).await;
-
-        tokio::spawn(api_health_check(api_config));
+        match insert_apis(&apis, &load_balancer_state.db).await {
+            Ok(()) => {
+                tokio::spawn(api_health_check(api_config));
+            }
+            Err(e) => {
+                warn!("apis not inserted, monitering might not work as expected");
+                error!("{}", e);
+                tokio::spawn(api_health_check(api_config));
+            }
+        };
     }
 
     let app = Router::new()
         .route("/{*wildcard}", get(handle_request).post(handle_request))
         .with_state(load_balancer_state);
 
-    let listener = TcpListener::bind(address).await.unwrap();
-    println!("loadbalancer is listening...");
+    let listener = TcpListener::bind(address)
+        .await
+        .expect("failed to listen...");
+    info!("loadbalancer is listening...");
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -261,9 +311,15 @@ async fn handle_request(
     let path = uri.path();
     let query = uri.query().unwrap_or("");
 
-    let res = update_hit(path, &lb.db).await;
+    match update_hit(path, &lb.db).await {
+        Ok(()) => {}
+        Err(e) => {
+            warn!("failed to update hit, metrics might return incorrect results");
+            error!("{}", e);
+        }
+    };
 
-    println!("Incoming request: {} {}?{}", method, path, query);
+    info!("Incoming request: {} {}?{}", method, path, query);
 
     lb.forward_request(req).await
 }
