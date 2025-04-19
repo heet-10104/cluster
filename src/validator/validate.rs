@@ -35,8 +35,23 @@ pub fn validate_lb_config(config: &LoadBalancerConfig) -> bool {
     is_valid
 }
 
+#[cfg(not(target_os = "windows"))]
 pub fn is_ip_live(ip: &str) -> bool {
     let output = Command::new("ping").arg("-c").arg("1").arg(ip).output();
+
+    match output {
+        Ok(result) => result.status.success(),
+        Err(_) => false,
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn is_ip_live(ip: &str) -> bool {
+    let output = Command::new("ping")
+        .arg("-n") // Windows uses -n instead of -c
+        .arg("1")
+        .arg(ip)
+        .output();
 
     match output {
         Ok(result) => result.status.success(),

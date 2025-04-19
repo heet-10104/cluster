@@ -1,15 +1,14 @@
-use crate::subapps::node::Metrics;
-
-use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo};
-
-use std::{sync::Arc, time::Duration};
-
 use crate::subapps::loadbalancer::ApiConfig;
+use crate::subapps::node::Metrics;
 use log::{error, info, warn};
+use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo};
 use reqwest::Client;
+use std::{sync::Arc, time::Duration};
 use tokio::time::sleep;
 
 pub async fn health_check(servers: Arc<Vec<String>>) {
+    info!("health check spawned");
+
     loop {
         for ip in servers.iter() {
             let url = "http://".to_owned() + &ip + ":3000" + "/metrics";
@@ -28,7 +27,7 @@ pub async fn health_check(servers: Arc<Vec<String>>) {
                         warn!("server {} gave server error {}", ip, response.status());
                     }
                     let metrics: Metrics = response.json().await.expect("failed to parse JSON");
-                    info!("{:?}", metrics);
+                    info!("{:#?}", metrics);
                     if metrics.cpu > 90.0 {
                         //env
                         warn!("cpu usage: {}", metrics.cpu);
@@ -55,12 +54,7 @@ pub async fn health_check(servers: Arc<Vec<String>>) {
     }
 }
 
-async fn failed_url_check(
-    failure_threshold: u32,
-    url: &String,
-    client: Client,
-    resp: reqwest::Response,
-) {
+async fn failed_url_check(failure_threshold: u32, url: &String, client: Client) {
     let mut pass = false;
     for i in 0..failure_threshold {
         let response = client.get(url).send().await;
@@ -75,16 +69,18 @@ async fn failed_url_check(
                 warn!("timeout for try {}", i)
             }
             Err(e) => {
-                warn!("error {}", e);
+                warn!("{}", e);
             }
         }
     }
     if pass == false {
-        error!("response for {} : {}", url, resp.status());
+        error!("{}-> failed", url);
     }
 }
 
 pub async fn api_health_check(api_config: ApiConfig) {
+    info!("api health check spawned");
+
     let time_interval = api_config.check_interval_ms;
     let timeout = api_config.timeout_ms;
     let failure_threshold = api_config.failure_threshold;
@@ -104,12 +100,15 @@ pub async fn api_health_check(api_config: ApiConfig) {
                     match response {
                         Ok(resp) => {
                             if !resp.status().is_success() {
-                                failed_url_check(failure_threshold, url, client, resp).await;
+                                failed_url_check(failure_threshold, url, client).await;
                             }
                         }
                         Err(_) => {
-                            let resp = client.get(url).send().await;
-                            failed_url_check(failure_threshold, url, client, resp.unwrap()).await;
+                            if let Ok(_) = client.get(url).send().await {
+                                failed_url_check(failure_threshold, url, client).await;
+                            } else {
+                                failed_url_check(failure_threshold, url, client).await;
+                            }
                         }
                     }
                 }
@@ -118,12 +117,15 @@ pub async fn api_health_check(api_config: ApiConfig) {
                     match response {
                         Ok(resp) => {
                             if !resp.status().is_success() {
-                                failed_url_check(failure_threshold, url, client, resp).await;
+                                failed_url_check(failure_threshold, url, client).await;
                             }
                         }
                         Err(_) => {
-                            let resp = client.get(url).send().await;
-                            failed_url_check(failure_threshold, url, client, resp.unwrap()).await;
+                            if let Ok(_) = client.get(url).send().await {
+                                failed_url_check(failure_threshold, url, client).await;
+                            } else {
+                                failed_url_check(failure_threshold, url, client).await;
+                            }
                         }
                     }
                 }
@@ -135,22 +137,27 @@ pub async fn api_health_check(api_config: ApiConfig) {
 }
 
 pub async fn load_balancer_connections() {
-    let af_flags = AddressFamilyFlags::IPV4;
-    let proto_flags = ProtocolFlags::TCP;
+    info!("load_balancer_connections spawned");
+    loop {
+        let af_flags = AddressFamilyFlags::IPV4;
+        let proto_flags = ProtocolFlags::TCP;
 
-    match get_sockets_info(af_flags, proto_flags) {
-        Ok(sockets) => {
-            let tcp_count = sockets
-                .into_iter()
-                .filter(|info| matches!(info.protocol_socket_info, ProtocolSocketInfo::Tcp(_)))
-                .count();
-            if tcp_count > 100 {
-                //env
-                warn!("connections: {}", tcp_count);
+        match get_sockets_info(af_flags, proto_flags) {
+            Ok(sockets) => {
+                let tcp_count = sockets
+                    .into_iter()
+                    .filter(|info| matches!(info.protocol_socket_info, ProtocolSocketInfo::Tcp(_)))
+                    .count();
+                info!("connections: {}", tcp_count);
+                if tcp_count > 100 {
+                    //env
+                    warn!("connections: {}", tcp_count);
+                }
+            }
+            Err(err) => {
+                warn!("Failed to get connections: {}", err);
             }
         }
-        Err(err) => {
-            warn!("Failed to get connections: {}", err);
-        }
+        sleep(Duration::from_secs(60)).await;
     }
 }

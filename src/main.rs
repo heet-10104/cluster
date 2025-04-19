@@ -67,12 +67,12 @@ async fn main() {
                 confy::get_configuration_file_path("load-balancer-config", None);
             if cfg_path.is_ok() {
                 info!(
-                    "found a file config file for load-balancer at {:?}",
+                    "found a file config file for load-balancer at {:#?}",
                     cfg_path
                 );
                 let cfg: LoadBalancerConfig =
                     confy::load("load-balancer-config", None).expect("❌ failed to load config");
-                info!("{:?}", cfg);
+                info!("{:#?}", cfg);
                 let proceed = Confirm::with_theme(&ColorfulTheme::default())
                     .with_prompt("want to continue with old config?")
                     .default(false)
@@ -99,12 +99,12 @@ async fn main() {
             }
         }
         NodeType::Server => {
-            let cfg_path = confy::get_configuration_file_path("load-balancer-config", None);
+            let cfg_path = confy::get_configuration_file_path("server-config", None);
             if cfg_path.is_ok() {
-                println!("found a file config file for server at {:?}", cfg_path);
+                println!("found a file config file for server at {:#?}", cfg_path);
                 let cfg: ServerConfig =
                     confy::load("server-config", None).expect("Failed to load config");
-                println!("{:?}", cfg);
+                println!("{:#?}", cfg);
                 let proceed = Confirm::with_theme(&ColorfulTheme::default())
                     .with_prompt("want to continue with old config?")
                     .default(false)

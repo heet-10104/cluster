@@ -2,7 +2,7 @@
 //this works in parallel to the application run by the user
 use crate::config::server_config::ServerConfig;
 use axum::{http::StatusCode, response::IntoResponse, routing::get, Json, Router};
-use log::{warn, error};
+use log::{error, warn};
 use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -141,7 +141,7 @@ async fn get_metrics() -> Metrics {
     let upload = 0.0;
 
     // println!(
-    //     "cpu: {:.2}% | memory: {}MB/{}MB | download: {:?}mbps | upload: {:?}mbps",
+    //     "cpu: {:.2}% | memory: {}MB/{}MB | download: {:#?}mbps | upload: {:#?}mbps",
     //     consumption, used_memory, total_memory, download, upload
     // );
 

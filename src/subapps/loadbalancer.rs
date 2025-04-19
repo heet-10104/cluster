@@ -131,15 +131,10 @@ pub async fn balance_load(db: PgPool) {
 
         match read_json_from_file(file_path) {
             Ok(json_str) => match validate_person_json(&json_str) {
-                Ok(person) => info!("✅ Valid JSON: {:?}", person),
+                Ok(config) => info!("✅ Valid JSON: {:#?}", config),
                 Err(e) => error!("❌ Invalid JSON structure: {}", e),
             },
             Err(e) => error!("❌ Failed to read file: {}", e),
-        }
-
-        if !serde_json::from_str::<ApiConfig>(file_path).is_ok() {
-            error!("jsom file format not valid!");
-            panic!();
         }
 
         let data = fs::read_to_string(file_path).expect("unable to read file");
@@ -148,7 +143,7 @@ pub async fn balance_load(db: PgPool) {
         let apis = api_config.apis.clone();
 
         for api in apis.iter() {
-            info!("{:?}", api);
+            info!("{:#?}", api);
         }
 
         match insert_apis(&apis, &load_balancer_state.db).await {

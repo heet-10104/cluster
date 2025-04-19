@@ -1,6 +1,6 @@
-use dialoguer::{theme::ColorfulTheme, Confirm, Input};
 use crate::subapps::node::server_listener;
 use crate::validator::validate::validate_server_config;
+use dialoguer::{theme::ColorfulTheme, Confirm, Input};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ServerListener {
@@ -90,7 +90,7 @@ pub async fn configure_server() {
         listener: listener_selected,
         loadbalancer_ip,
     };
-    println!("Server Config: {:?}", config);
+    println!("Server Config: {:#?}", config);
 
     if !validate_server_config(&config) {
         println!("Invalid configuration. Please check the IP addresses and try again.");
@@ -99,4 +99,3 @@ pub async fn configure_server() {
     confy::store("server-config", None, config).expect("Failed to store config");
     server_listener().await;
 }
-
