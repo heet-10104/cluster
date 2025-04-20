@@ -8,7 +8,7 @@ use tokio::time::sleep;
 
 pub async fn health_check(servers: Arc<Vec<String>>) {
     info!("health check spawned");
-
+    //initialze metrics array here 
     loop {
         for ip in servers.iter() {
             let url = "http://".to_owned() + &ip + ":3000" + "/metrics";
@@ -28,20 +28,17 @@ pub async fn health_check(servers: Arc<Vec<String>>) {
                     }
                     let metrics: Metrics = response.json().await.expect("failed to parse JSON");
                     info!("{:#?}", metrics);
+                    //push the metrics into array
                     if metrics.cpu > 90.0 {
-                        //env
                         warn!("cpu usage: {}", metrics.cpu);
                     }
                     if metrics.ram > 90.0 {
-                        //env
                         warn!("ram usage: {}", metrics.ram);
                     }
                     if metrics.netspeed[0] < 50.0 {
-                        //env
                         warn!("download: {}", metrics.netspeed[0]);
                     }
                     if metrics.netspeed[1] < 50.0 {
-                        //env
                         warn!("upload: {}", metrics.netspeed[1]);
                     }
                 }
@@ -50,7 +47,8 @@ pub async fn health_check(servers: Arc<Vec<String>>) {
                 }
             };
         }
-        sleep(Duration::from_secs(60)).await; //env
+        sleep(Duration::from_secs(60)).await;
+        //send post request to tui
     }
 }
 
