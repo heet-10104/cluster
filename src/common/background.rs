@@ -1,18 +1,17 @@
 use crate::subapps::loadbalancer::ApiConfig;
-use crate::subapps::node::Metrics;
 use log::{error, info, warn};
 use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo};
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 use tokio::time::sleep;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct ServerData {
     pub server_data: Vec<Payload>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Payload {
     pub cpu: f64,
     pub ram: f64,
@@ -40,7 +39,7 @@ pub async fn health_check(servers: Arc<Vec<String>>) {
                         warn!("server {} gave server error {}", ip, response.status());
                     }
                     let metrics: Payload = response.json().await.expect("failed to parse JSON");
-                    info!("{:#?}", metrics);
+
                     if metrics.cpu > 90.0 {
                         warn!("cpu usage: {}", metrics.cpu);
                     }
@@ -60,16 +59,20 @@ pub async fn health_check(servers: Arc<Vec<String>>) {
                 }
             };
         }
-        sleep(Duration::from_secs(60)).await;
-
-        let url = "100.104.128.106:3000/data";
+        let data = ServerData { server_data };
+        let url = "http://100.86.175.69:3000/data";
         let client = Client::new();
-        match client.get(url).send().await {
-            Ok(_) => {}
+        match client.post(url).json(&data).send().await {
+            Ok(resp) => {
+                if !resp.status().is_success() {
+                    error!("{}", resp.status());
+                }
+            }
             Err(err) => {
-                warn!("data not sent to tui {}", err);
+                warn!("data not sent to tui {:?}", err);
             }
         }
+        sleep(Duration::from_secs(1)).await;
     }
 }
 

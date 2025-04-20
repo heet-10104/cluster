@@ -27,6 +27,7 @@ pub async fn server_listener() {
         .route("/metrics", get(metrics_handler));
 
     let address = server_ip + ":3001";
+    dbg!(address.clone());
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("failed to listen...");
