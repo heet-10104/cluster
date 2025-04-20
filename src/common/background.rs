@@ -24,7 +24,7 @@ pub async fn health_check(servers: Arc<Vec<String>>) {
     loop {
         let mut server_data: Vec<Payload> = vec![];
         for ip in servers.iter() {
-            let url = "http://".to_owned() + &ip + ":3000" + "/metrics";
+            let url = "http://".to_owned() + &ip + ":3001" + "/metrics";
             let client = Client::new();
 
             match client.get(url).send().await {
