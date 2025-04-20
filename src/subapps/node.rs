@@ -26,7 +26,7 @@ pub async fn server_listener() {
         .route("/connections", get(connections_handler))
         .route("/metrics", get(metrics_handler));
 
-    let address = server_ip + ":3000";
+    let address = server_ip + ":3001";
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("failed to listen...");

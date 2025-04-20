@@ -3,13 +3,26 @@ use crate::subapps::node::Metrics;
 use log::{error, info, warn};
 use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo};
 use reqwest::Client;
+use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
 use tokio::time::sleep;
 
+#[derive(Deserialize)]
+pub struct ServerData {
+    pub server_data: Vec<Payload>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Payload {
+    pub cpu: f64,
+    pub ram: f64,
+    pub netspeed: Vec<f64>,
+}
+
 pub async fn health_check(servers: Arc<Vec<String>>) {
     info!("health check spawned");
-    //initialze metrics array here 
     loop {
+        let mut server_data: Vec<Payload> = vec![];
         for ip in servers.iter() {
             let url = "http://".to_owned() + &ip + ":3000" + "/metrics";
             let client = Client::new();
@@ -26,9 +39,8 @@ pub async fn health_check(servers: Arc<Vec<String>>) {
                     if response.status().is_server_error() {
                         warn!("server {} gave server error {}", ip, response.status());
                     }
-                    let metrics: Metrics = response.json().await.expect("failed to parse JSON");
+                    let metrics: Payload = response.json().await.expect("failed to parse JSON");
                     info!("{:#?}", metrics);
-                    //push the metrics into array
                     if metrics.cpu > 90.0 {
                         warn!("cpu usage: {}", metrics.cpu);
                     }
@@ -41,6 +53,7 @@ pub async fn health_check(servers: Arc<Vec<String>>) {
                     if metrics.netspeed[1] < 50.0 {
                         warn!("upload: {}", metrics.netspeed[1]);
                     }
+                    server_data.push(metrics);
                 }
                 Err(e) => {
                     error!("{}", e);
@@ -48,7 +61,15 @@ pub async fn health_check(servers: Arc<Vec<String>>) {
             };
         }
         sleep(Duration::from_secs(60)).await;
-        //send post request to tui
+
+        let url = "100.104.128.106:3000/data";
+        let client = Client::new();
+        match client.get(url).send().await {
+            Ok(_) => {}
+            Err(err) => {
+                warn!("data not sent to tui {}", err);
+            }
+        }
     }
 }
 

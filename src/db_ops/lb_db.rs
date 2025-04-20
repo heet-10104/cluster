@@ -33,9 +33,13 @@ pub async fn update_error_code(
     match errors {
         Some(mut errors) => {
             errors.push(status.as_u16() as i32);
-            sqlx::query!("update api_info set errors = ($1) where api = ($2)", &errors, path)
-                .execute(db)
-                .await?;
+            sqlx::query!(
+                "update api_info set errors = ($1) where api = ($2)",
+                &errors,
+                path
+            )
+            .execute(db)
+            .await?;
         }
         None => {}
     }
